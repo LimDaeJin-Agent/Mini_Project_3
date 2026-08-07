@@ -55,7 +55,17 @@ export default function Home() {
   const [manualLocationInput, setManualLocationInput] = useState("");
   const [manualLocationLoading, setManualLocationLoading] = useState(false);
   const [locationCandidates, setLocationCandidates] = useState(null);
+  const [expandedRecipes, setExpandedRecipes] = useState(new Set());
   const abortControllerRef = useRef(null);
+
+  function toggleExpandedRecipe(idx) {
+    setExpandedRecipes((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
 
   async function handleSearchLocation(e) {
     e.preventDefault();
@@ -201,6 +211,7 @@ export default function Home() {
       }
 
       setRecipes(data.recipes || []);
+      setExpandedRecipes(new Set());
       if (isWeatherMode) {
         addExcludes((data.recipes || []).map((r) => r.name));
       }
@@ -494,58 +505,77 @@ export default function Home() {
           </div>
         )}
 
+        {recipes.length > 0 && (
+          <p className="text-xs text-[var(--board-text-dim)] mb-2">요리 이름을 누르면 재료·조리법이 펼쳐져요.</p>
+        )}
         <div className="flex flex-col gap-4">
-          {recipes.map((recipe, idx) => (
-            <div
-              key={idx}
-              className="rounded-md border border-dashed border-[var(--board-border)] bg-[var(--board-surface)] p-3 sm:p-4"
-            >
-              <div className="flex items-center justify-between mb-3 gap-2">
-                <h2 className="text-base sm:text-lg font-extrabold text-[var(--foreground)] -rotate-[0.4deg]">
-                  {recipe.name}
-                </h2>
-                <span className="text-xs sm:text-sm font-bold bg-[var(--board-accent)] text-[var(--board-accent-ink)] px-2 py-0.5 rounded rotate-[0.6deg] whitespace-nowrap">
-                  {recipe.cookTime}
-                </span>
-              </div>
-
-              {recipe.reason && (
-                <p className="text-sm text-[var(--board-accent)] mb-3">💬 {recipe.reason}</p>
-              )}
-
-              <IngredientTable
-                title="주재료"
-                items={recipe.mainIngredients}
-                servingsLabel={recipe.servingsRequested || "요청 인분"}
-              />
-              <IngredientTable
-                title="양념"
-                items={recipe.seasonings}
-                servingsLabel={recipe.servingsRequested || "요청 인분"}
-              />
-              <p className="text-xs text-[var(--board-text-dim)] mb-3">🛒 표시는 추가로 사야 하는 재료예요.</p>
-
-              <PrepOrderTable mainIngredients={recipe.mainIngredients} seasonings={recipe.seasonings} />
-
-              <ol className="list-decimal list-inside text-sm text-[var(--foreground)] flex flex-col gap-2 mb-3">
-                {(recipe.steps || []).map((step, i) => (
-                  <li key={i} className="leading-relaxed">
-                    {step.text}
-                    <StepTimer
-                      minutes={cookingDevice === "induction" ? step.durationMinutesInduction : step.durationMinutesGas}
-                    />
-                  </li>
-                ))}
-              </ol>
-              <button
-                onClick={() => handleSave(recipe)}
-                disabled={savedNames.includes(recipe.name)}
-                className="text-sm font-semibold rounded-md border border-[var(--board-accent)] text-[var(--board-accent)] px-3 py-1.5 disabled:opacity-40"
+          {recipes.map((recipe, idx) => {
+            const isOpen = expandedRecipes.has(idx);
+            return (
+              <div
+                key={idx}
+                className="rounded-md border border-dashed border-[var(--board-border)] bg-[var(--board-surface)] p-3 sm:p-4"
               >
-                {savedNames.includes(recipe.name) ? "저장됨" : "저장하기"}
-              </button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => toggleExpandedRecipe(idx)}
+                  className="w-full flex items-center justify-between gap-2 text-left"
+                  aria-expanded={isOpen}
+                >
+                  <div className="min-w-0">
+                    <h2 className="text-base sm:text-lg font-extrabold text-[var(--foreground)] -rotate-[0.4deg] truncate">
+                      {recipe.name}
+                    </h2>
+                    {recipe.reason && (
+                      <p className="text-sm text-[var(--board-accent)] truncate">💬 {recipe.reason}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs sm:text-sm font-bold bg-[var(--board-accent)] text-[var(--board-accent-ink)] px-2 py-0.5 rounded rotate-[0.6deg] whitespace-nowrap">
+                      {recipe.cookTime}
+                    </span>
+                    <span className="text-[var(--board-text-dim)]">{isOpen ? "▾" : "▸"}</span>
+                  </div>
+                </button>
+
+                {isOpen && (
+                  <div className="mt-3">
+                    <IngredientTable
+                      title="주재료"
+                      items={recipe.mainIngredients}
+                      servingsLabel={recipe.servingsRequested || "요청 인분"}
+                    />
+                    <IngredientTable
+                      title="양념"
+                      items={recipe.seasonings}
+                      servingsLabel={recipe.servingsRequested || "요청 인분"}
+                    />
+                    <p className="text-xs text-[var(--board-text-dim)] mb-3">🛒 표시는 추가로 사야 하는 재료예요.</p>
+
+                    <PrepOrderTable mainIngredients={recipe.mainIngredients} seasonings={recipe.seasonings} />
+
+                    <ol className="list-decimal list-inside text-sm text-[var(--foreground)] flex flex-col gap-2 mb-3">
+                      {(recipe.steps || []).map((step, i) => (
+                        <li key={i} className="leading-relaxed">
+                          {step.text}
+                          <StepTimer
+                            minutes={cookingDevice === "induction" ? step.durationMinutesInduction : step.durationMinutesGas}
+                          />
+                        </li>
+                      ))}
+                    </ol>
+                    <button
+                      onClick={() => handleSave(recipe)}
+                      disabled={savedNames.includes(recipe.name)}
+                      className="text-sm font-semibold rounded-md border border-[var(--board-accent)] text-[var(--board-accent)] px-3 py-1.5 disabled:opacity-40"
+                    >
+                      {savedNames.includes(recipe.name) ? "저장됨" : "저장하기"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

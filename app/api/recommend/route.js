@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { supabase } from "@/lib/supabaseClient";
 
 const INGREDIENT_ITEM_SCHEMA = {
   type: Type.OBJECT,
@@ -163,6 +164,25 @@ export async function POST(request) {
     });
 
     const parsed = JSON.parse(response.text);
+
+    try {
+      const { error: logError } = await supabase.from("search_history").insert({
+        ingredients_input: ingredients || null,
+        desired_dish: desiredDish || null,
+        weather_condition: weather?.condition || null,
+        weather_temp: typeof weather?.temp === "number" ? weather.temp : null,
+        weather_location: weather?.locationName || null,
+        results: (parsed.recipes || []).map((r) => ({
+          name: r.name,
+          reason: r.reason,
+          cookTime: r.cookTime,
+        })),
+      });
+      if (logError) console.error("search_history insert error:", logError);
+    } catch (logError) {
+      console.error("search_history insert error:", logError);
+    }
+
     return Response.json(parsed);
   } catch (error) {
     console.error("Gemini recommend error:", error);
