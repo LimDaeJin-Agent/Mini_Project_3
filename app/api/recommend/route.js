@@ -59,18 +59,22 @@ const RECIPE_SCHEMA = {
           name: { type: Type.STRING },
           cookTime: { type: Type.STRING },
           servingsRequested: { type: Type.STRING, description: "사용자가 요청한 인분 표시 (예: '2인분')" },
+          reason: {
+            type: Type.STRING,
+            description: "날씨 기반 추천일 때만 왜 지금 날씨에 이 요리가 어울리는지 한 줄로 설명. 날씨 기반이 아니면 빈 문자열.",
+          },
           mainIngredients: { type: Type.ARRAY, items: INGREDIENT_ITEM_SCHEMA },
           seasonings: { type: Type.ARRAY, items: INGREDIENT_ITEM_SCHEMA },
           steps: { type: Type.ARRAY, items: STEP_SCHEMA },
         },
-        required: ["name", "cookTime", "servingsRequested", "mainIngredients", "seasonings", "steps"],
+        required: ["name", "cookTime", "servingsRequested", "reason", "mainIngredients", "seasonings", "steps"],
       },
     },
   },
   required: ["recipes"],
 };
 
-function buildPrompt({ ingredients, desiredDish, cookTime, servings }) {
+function buildPrompt({ ingredients, desiredDish, cookTime, servings, weather, excludeDishes }) {
   const servingsLabel = (servings && servings.trim()) || "1인분";
 
   const common = `희망 조리시간: ${cookTime || "상관없음"}
@@ -90,7 +94,13 @@ function buildPrompt({ ingredients, desiredDish, cookTime, servings }) {
 - steps는 addOrder 순서와 일치하게, 재료가 실제로 냄비/팬에 들어가는 순서대로 작성해주세요.
 - 각 단계는 하나의 동작으로 잘게 나눠주세요. 예: "고기를 넣고 볶는다", "야채를 추가하고 볶는다", "춘장을 넣고 볶는다", "물을 붓고 끓인다".
 - 재료 손질, 양념장 섞기, 그릇에 담기처럼 불 위에서 시간을 잴 필요가 없는 단계는 durationMinutesGas와 durationMinutesInduction을 모두 0으로 해주세요.
-- 불 위에서 조리하는 단계는 durationMinutesGas(가스레인지 기준 분)와 durationMinutesInduction(인덕션 기준 분)을 각각 정수로 알려주세요. 인덕션은 화력이 강하고 일정하게 유지되고, 가스레인지는 불꽃 조절과 예열 특성이 달라 시간이 다를 수 있다는 점을 반영해서 두 값을 정하되, 재료 구성/손질법/조리 순서 자체는 조리기구와 무관하게 항상 동일하게 유지하세요.`;
+- 불 위에서 조리하는 단계는 durationMinutesGas(가스레인지 기준 분)와 durationMinutesInduction(인덕션 기준 분)을 각각 정수로 알려주세요. 인덕션은 화력이 강하고 일정하게 유지되고, 가스레인지는 불꽃 조절과 예열 특성이 달라 시간이 다를 수 있다는 점을 반영해서 두 값을 정하되, 재료 구성/손질법/조리 순서 자체는 조리기구와 무관하게 항상 동일하게 유지하세요.
+- reason 필드는 날씨 기반 추천일 때만 한 줄로 채우고, 그 외에는 빈 문자열("")로 두세요.`;
+
+  const excludeLine =
+    excludeDishes && excludeDishes.length > 0
+      ? `\n다음 요리는 최근 30분 이내에 이미 추천했으니 절대 다시 추천하지 말고 다른 요리로 골라주세요: ${excludeDishes.join(", ")}`
+      : "";
 
   if (desiredDish && desiredDish.trim()) {
     return `당신은 한국 가정식 요리 전문가입니다.
@@ -102,14 +112,24 @@ recipes 배열에는 이 요리 1개만 담아주세요.
 ${common}`;
   }
 
+  if (weather && weather.condition) {
+    return `당신은 한국 가정식 요리 전문가입니다.
+사용자가 가진 재료: ${ingredients}
+현재 날씨: ${weather.locationName || ""} 기온 ${weather.temp}°C, ${weather.description || weather.condition}
+
+가진 재료와 현재 날씨를 함께 고려해서 지금 먹기 좋은 요리를 정확히 2개 추천해주세요.
+각 요리의 reason에는 "왜 지금 날씨에 이 요리가 어울리는지"를 한 줄로 설명해주세요 (예: "쌀쌀한 날씨엔 뜨끈한 국물이 생각나서 추천해요").${excludeLine}
+${common}`;
+  }
+
   return `당신은 한국 가정식 요리 전문가입니다.
 다음 재료로 만들 수 있는 요리를 2~3개 추천해주세요.
-재료: ${ingredients}
+재료: ${ingredients}${excludeLine}
 ${common}`;
 }
 
 export async function POST(request) {
-  const { ingredients, desiredDish, cookTime, servings } = await request.json();
+  const { ingredients, desiredDish, cookTime, servings, weather, excludeDishes } = await request.json();
 
   const hasIngredients = ingredients && ingredients.trim();
   const hasDesiredDish = desiredDish && desiredDish.trim();
@@ -129,7 +149,7 @@ export async function POST(request) {
     );
   }
 
-  const prompt = buildPrompt({ ingredients, desiredDish, cookTime, servings });
+  const prompt = buildPrompt({ ingredients, desiredDish, cookTime, servings, weather, excludeDishes });
 
   try {
     const ai = new GoogleGenAI({ apiKey });

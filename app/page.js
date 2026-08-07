@@ -8,6 +8,35 @@ import StepTimer from "@/components/StepTimer";
 import FridgeLoader from "@/components/FridgeLoader";
 import NotepadLoader from "@/components/NotepadLoader";
 
+const EXCLUDE_KEY = "fridge_recent_dishes";
+const EXCLUDE_WINDOW_MS = 30 * 60 * 1000;
+
+function getValidExcludes() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXCLUDE_KEY) || "[]");
+    const now = Date.now();
+    const valid = raw.filter((e) => now - e.t < EXCLUDE_WINDOW_MS);
+    localStorage.setItem(EXCLUDE_KEY, JSON.stringify(valid));
+    return valid.map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+function addExcludes(names) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXCLUDE_KEY) || "[]");
+    const now = Date.now();
+    const merged = [
+      ...raw.filter((e) => now - e.t < EXCLUDE_WINDOW_MS),
+      ...names.map((name) => ({ name, t: now })),
+    ];
+    localStorage.setItem(EXCLUDE_KEY, JSON.stringify(merged));
+  } catch {
+    // localStorage를 못 쓰는 환경이면 조용히 넘어감
+  }
+}
+
 export default function Home() {
   const [ingredients, setIngredients] = useState("");
   const [desiredDish, setDesiredDish] = useState("");
@@ -18,16 +47,82 @@ export default function Home() {
   const [error, setError] = useState("");
   const [recipes, setRecipes] = useState([]);
   const [savedNames, setSavedNames] = useState([]);
+  const [weather, setWeather] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState("");
+  const [showPermissionHelp, setShowPermissionHelp] = useState(false);
   const abortControllerRef = useRef(null);
+
+  function getPlatform() {
+    if (typeof navigator === "undefined") return "desktop";
+    const ua = navigator.userAgent || "";
+    if (/iPhone|iPad|iPod/.test(ua)) return "ios";
+    if (/Android/.test(ua)) return "android";
+    return "desktop";
+  }
+
+  function handleGps() {
+    setWeatherError("");
+
+    if (!navigator.geolocation) {
+      setWeatherError("이 브라우저는 위치 기능을 지원하지 않아요.");
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      setWeatherError(
+        "위치 정보는 보안 연결(https)이나 localhost에서만 사용할 수 있어요. 배포된 주소(https://...)나 이 컴퓨터의 localhost:3000에서 시도해주세요."
+      );
+      return;
+    }
+
+    setWeatherLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const res = await fetch(`/api/weather?lat=${latitude}&lon=${longitude}`);
+          const data = await res.json();
+          if (!res.ok) {
+            setWeatherError(data.error || "날씨 정보를 가져오지 못했어요.");
+          } else {
+            setWeather(data);
+          }
+        } catch (err) {
+          setWeatherError("날씨 정보를 가져오지 못했어요.");
+        } finally {
+          setWeatherLoading(false);
+        }
+      },
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) {
+          setWeatherError("위치 권한이 차단되어 있어요.");
+          setShowPermissionHelp(true);
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          setWeatherError("위치를 확인할 수 없어요. 기기의 위치 서비스(GPS)가 켜져 있는지 확인해주세요.");
+        } else {
+          setWeatherError("위치 확인이 시간 초과됐어요. 다시 시도해주세요.");
+        }
+        setWeatherLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
 
-    if (!ingredients.trim() && !desiredDish.trim()) {
+    const hasIngredients = ingredients.trim();
+    const hasDesiredDish = desiredDish.trim();
+
+    if (!hasIngredients && !hasDesiredDish) {
       setError("가진 재료 또는 먹고 싶은 요리 중 하나는 입력해주세요.");
       return;
     }
+
+    const isWeatherMode = hasIngredients && !hasDesiredDish && weather;
+    const excludeDishes = isWeatherMode ? getValidExcludes() : [];
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -38,7 +133,14 @@ export default function Home() {
       const res = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients, desiredDish, cookTime, servings }),
+        body: JSON.stringify({
+          ingredients,
+          desiredDish,
+          cookTime,
+          servings,
+          weather: isWeatherMode ? weather : undefined,
+          excludeDishes,
+        }),
         signal: controller.signal,
       });
       const data = await res.json();
@@ -49,6 +151,9 @@ export default function Home() {
       }
 
       setRecipes(data.recipes || []);
+      if (isWeatherMode) {
+        addExcludes((data.recipes || []).map((r) => r.name));
+      }
     } catch (err) {
       if (err.name === "AbortError") {
         setError("추천 요청을 취소했어요.");
@@ -103,9 +208,85 @@ export default function Home() {
             저장한 레시피 보기
           </Link>
         </div>
-        <p className="text-sm sm:text-base text-[var(--board-text-dim)] mb-6">
+        <p className="text-sm sm:text-base text-[var(--board-text-dim)] mb-4">
           냉장고에 있는 재료를 입력하면 AI가 만들 수 있는 요리를 추천해줘요. 먹고 싶은 요리가 있다면 그 요리를 어떻게 만드는지, 추가로 뭘 사야 하는지도 알려줘요.
         </p>
+
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <button
+            type="button"
+            onClick={handleGps}
+            disabled={weatherLoading || loading}
+            className="text-sm font-medium rounded-md border border-dashed border-[var(--board-border)] text-[var(--board-text-dim)] px-3 py-1.5 disabled:opacity-50"
+          >
+            📍 {weatherLoading ? "위치 확인 중..." : "내 위치 날씨"}
+          </button>
+          {weather && (
+            <span className="text-sm text-[var(--foreground)]">
+              {weather.icon} {weather.locationName} {weather.temp}°C
+            </span>
+          )}
+          {weatherError && <span className="text-xs text-[var(--board-danger)]">{weatherError}</span>}
+        </div>
+        {weather && !desiredDish.trim() && (
+          <p className="text-xs text-[var(--board-text-dim)] -mt-4 mb-4">
+            먹고 싶은 요리를 비워두면 지금 날씨({weather.description || weather.condition})에 맞는 요리 2개를 추천해줘요.
+          </p>
+        )}
+
+        {showPermissionHelp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-md border border-dashed border-[var(--board-accent)] bg-[var(--board-surface)] p-4">
+              <h3 className="text-base font-extrabold text-[var(--foreground)] mb-2">📍 위치 권한이 꺼져 있어요</h3>
+              <p className="text-sm text-[var(--board-text-dim)] mb-3">
+                한 번 거부하면 브라우저가 다시 팝업을 안 띄워서, 아래 방법으로 직접 허용으로 바꿔주셔야 해요.
+              </p>
+              <ol className="list-decimal list-inside text-sm text-[var(--foreground)] flex flex-col gap-1.5 mb-4">
+                {getPlatform() === "ios" && (
+                  <>
+                    <li>주소창의 "ᴬᴬ" 아이콘(또는 설정 아이콘) 클릭</li>
+                    <li>"웹사이트 설정" → 위치 → "허용"으로 변경</li>
+                    <li>안 보이면: 아이폰 설정 앱 → Safari → 위치 서비스 확인</li>
+                  </>
+                )}
+                {getPlatform() === "android" && (
+                  <>
+                    <li>주소창 왼쪽 자물쇠 또는 ⓘ 아이콘 클릭</li>
+                    <li>"권한" → 위치 → "허용"으로 변경</li>
+                    <li>휴대폰 설정에서 위치 서비스(GPS)가 켜져 있는지도 확인</li>
+                  </>
+                )}
+                {getPlatform() === "desktop" && (
+                  <>
+                    <li>주소창 왼쪽 자물쇠(🔒) 아이콘 클릭</li>
+                    <li>"위치" 항목을 "허용"으로 변경</li>
+                    <li>이 페이지를 새로고침</li>
+                  </>
+                )}
+                <li>바꾼 뒤 아래 "다시 시도"를 눌러주세요</li>
+              </ol>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPermissionHelp(false)}
+                  className="flex-1 rounded-md border border-dashed border-[var(--board-border)] text-[var(--board-text-dim)] py-2 text-sm"
+                >
+                  닫기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPermissionHelp(false);
+                    handleGps();
+                  }}
+                  className="flex-1 rounded-md bg-[var(--board-accent)] text-[var(--board-accent-ink)] font-bold py-2 text-sm"
+                >
+                  다시 시도
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mb-8">
           <div>
@@ -229,6 +410,10 @@ export default function Home() {
                   {recipe.cookTime}
                 </span>
               </div>
+
+              {recipe.reason && (
+                <p className="text-sm text-[var(--board-accent)] mb-3">💬 {recipe.reason}</p>
+              )}
 
               <IngredientTable
                 title="주재료"
