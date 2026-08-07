@@ -51,7 +51,58 @@ export default function Home() {
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState("");
   const [showPermissionHelp, setShowPermissionHelp] = useState(false);
+  const [showManualLocation, setShowManualLocation] = useState(false);
+  const [manualLocationInput, setManualLocationInput] = useState("");
+  const [manualLocationLoading, setManualLocationLoading] = useState(false);
+  const [locationCandidates, setLocationCandidates] = useState(null);
   const abortControllerRef = useRef(null);
+
+  async function handleSearchLocation(e) {
+    e.preventDefault();
+    if (!manualLocationInput.trim()) return;
+    setWeatherError("");
+    setLocationCandidates(null);
+    setManualLocationLoading(true);
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(manualLocationInput.trim())}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setWeatherError(data.error || "지역을 찾지 못했어요.");
+      } else if (!data.candidates || data.candidates.length === 0) {
+        setWeatherError("해당 지역을 찾지 못했어요. 다르게 입력해보세요.");
+      } else {
+        setLocationCandidates(data.candidates);
+      }
+    } catch (err) {
+      setWeatherError("지역을 찾지 못했어요.");
+    } finally {
+      setManualLocationLoading(false);
+    }
+  }
+
+  async function handleSelectCandidate(candidate) {
+    setWeatherError("");
+    setManualLocationLoading(true);
+    try {
+      const label = [candidate.name, candidate.state].filter(Boolean).join(" ");
+      const res = await fetch(
+        `/api/weather?lat=${candidate.lat}&lon=${candidate.lon}&name=${encodeURIComponent(label)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setWeatherError(data.error || "날씨 정보를 가져오지 못했어요.");
+      } else {
+        setWeather(data);
+        setShowManualLocation(false);
+        setManualLocationInput("");
+        setLocationCandidates(null);
+      }
+    } catch (err) {
+      setWeatherError("날씨 정보를 가져오지 못했어요.");
+    } finally {
+      setManualLocationLoading(false);
+    }
+  }
 
   function getPlatform() {
     if (typeof navigator === "undefined") return "desktop";
@@ -80,13 +131,13 @@ export default function Home() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          const { latitude, longitude } = pos.coords;
+          const { latitude, longitude, accuracy } = pos.coords;
           const res = await fetch(`/api/weather?lat=${latitude}&lon=${longitude}`);
           const data = await res.json();
           if (!res.ok) {
             setWeatherError(data.error || "날씨 정보를 가져오지 못했어요.");
           } else {
-            setWeather(data);
+            setWeather({ ...data, accuracy: Math.round(accuracy) });
           }
         } catch (err) {
           setWeatherError("날씨 정보를 가져오지 못했어요.");
@@ -224,10 +275,58 @@ export default function Home() {
           {weather && (
             <span className="text-sm text-[var(--foreground)]">
               {weather.icon} {weather.locationName} {weather.temp}°C
+              {typeof weather.accuracy === "number" && (
+                <span className="text-[var(--board-text-dim)]"> (오차범위 약 {weather.accuracy.toLocaleString()}m)</span>
+              )}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setShowManualLocation((v) => !v)}
+            className="text-xs underline text-[var(--board-text-dim)]"
+          >
+            위치가 다른가요? 직접 입력
+          </button>
           {weatherError && <span className="text-xs text-[var(--board-danger)]">{weatherError}</span>}
         </div>
+
+        {showManualLocation && (
+          <div className="mb-6 rounded-md border border-dashed border-[var(--board-border)] bg-[var(--board-surface)] p-3">
+            <form onSubmit={handleSearchLocation} className="flex gap-2 mb-2">
+              <input
+                className="flex-1 rounded-md border border-dashed border-[var(--board-border)] bg-transparent p-2 text-sm text-[var(--foreground)] placeholder:text-[var(--board-text-dim)]"
+                placeholder="예: 수원시 장안구 연무동"
+                value={manualLocationInput}
+                onChange={(e) => setManualLocationInput(e.target.value)}
+              />
+              <button
+                type="submit"
+                disabled={manualLocationLoading}
+                className="rounded-md bg-[var(--board-accent)] text-[var(--board-accent-ink)] font-bold px-3 py-2 text-sm disabled:opacity-50"
+              >
+                {manualLocationLoading ? "검색 중..." : "검색"}
+              </button>
+            </form>
+            {locationCandidates && (
+              <div className="flex flex-col gap-1.5">
+                {locationCandidates.length === 0 && (
+                  <p className="text-xs text-[var(--board-text-dim)]">일치하는 지역이 없어요.</p>
+                )}
+                {locationCandidates.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSelectCandidate(c)}
+                    className="text-left text-sm rounded-md border border-dashed border-[var(--board-border)] px-3 py-2 text-[var(--foreground)] hover:border-[var(--board-accent)]"
+                  >
+                    {[c.name, c.state, c.country].filter(Boolean).join(", ")}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {weather && !desiredDish.trim() && (
           <p className="text-xs text-[var(--board-text-dim)] -mt-4 mb-4">
             먹고 싶은 요리를 비워두면 지금 날씨({weather.description || weather.condition})에 맞는 요리 2개를 추천해줘요.
