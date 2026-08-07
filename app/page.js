@@ -84,9 +84,8 @@ export default function Home() {
     setWeatherError("");
     setManualLocationLoading(true);
     try {
-      const label = [candidate.name, candidate.state].filter(Boolean).join(" ");
       const res = await fetch(
-        `/api/weather?lat=${candidate.lat}&lon=${candidate.lon}&name=${encodeURIComponent(label)}`
+        `/api/weather?lat=${candidate.lat}&lon=${candidate.lon}&name=${encodeURIComponent(candidate.label)}`
       );
       const data = await res.json();
       if (!res.ok) {
@@ -319,7 +318,7 @@ export default function Home() {
                     onClick={() => handleSelectCandidate(c)}
                     className="text-left text-sm rounded-md border border-dashed border-[var(--board-border)] px-3 py-2 text-[var(--foreground)] hover:border-[var(--board-accent)]"
                   >
-                    {[c.name, c.state, c.country].filter(Boolean).join(", ")}
+                    {c.label}
                   </button>
                 ))}
               </div>
