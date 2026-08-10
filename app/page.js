@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import IngredientTable from "@/components/IngredientTable";
 import PrepOrderTable from "@/components/PrepOrderTable";
 import StepTimer from "@/components/StepTimer";
 import FridgeLoader from "@/components/FridgeLoader";
 import NotepadLoader from "@/components/NotepadLoader";
+import { useVoiceContext } from "@/lib/VoiceContext";
 
 const EXCLUDE_KEY = "fridge_recent_dishes";
 const EXCLUDE_WINDOW_MS = 30 * 60 * 1000;
@@ -57,14 +58,24 @@ export default function Home() {
   const [locationCandidates, setLocationCandidates] = useState(null);
   const [expandedRecipes, setExpandedRecipes] = useState(new Set());
   const abortControllerRef = useRef(null);
+  const voice = useVoiceContext();
+
+  useEffect(() => {
+    voice?.setActiveRecipe(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleExpandedRecipe(idx) {
+    const opening = !expandedRecipes.has(idx);
     setExpandedRecipes((prev) => {
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx);
       else next.add(idx);
       return next;
     });
+    if (opening) {
+      voice?.setActiveRecipe(recipes[idx]);
+    }
   }
 
   async function handleSearchLocation(e) {

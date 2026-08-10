@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { playText, prefetch } from "@/lib/ttsPlayer";
+
+const FIXED_ANNOUNCEMENTS = ["1분 남았습니다.", "30초 남았습니다.", "10초 남았습니다.", "완료되었습니다."];
+
+if (typeof window !== "undefined") {
+  FIXED_ANNOUNCEMENTS.forEach((text) => prefetch(text));
+}
 
 function playAlarm() {
   try {
@@ -38,16 +45,23 @@ export default function StepTimer({ minutes }) {
     setDone(false);
     setRunning(true);
     setRemaining(minutes * 60);
+    playText(`${minutes}분간 가열을 시작합니다.`);
+
     intervalRef.current = setInterval(() => {
       setRemaining((prev) => {
+        const next = prev - 1;
+        if (next === 60 || next === 30 || next === 10) {
+          playText(`${next === 60 ? "1분" : next + "초"} 남았습니다.`);
+        }
         if (prev <= 1) {
           clearInterval(intervalRef.current);
           setRunning(false);
           setDone(true);
           playAlarm();
+          playText("완료되었습니다.");
           return 0;
         }
-        return prev - 1;
+        return next;
       });
     }, 1000);
   }

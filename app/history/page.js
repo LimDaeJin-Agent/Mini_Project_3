@@ -5,6 +5,7 @@ import Link from "next/link";
 import IngredientTable from "@/components/IngredientTable";
 import PrepOrderTable from "@/components/PrepOrderTable";
 import StepTimer from "@/components/StepTimer";
+import { useVoiceContext } from "@/lib/VoiceContext";
 
 const LONG_PRESS_MS = 500;
 
@@ -20,6 +21,12 @@ export default function HistoryPage() {
 
   const pressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
+  const voice = useVoiceContext();
+
+  useEffect(() => {
+    voice?.setActiveRecipe(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -41,12 +48,23 @@ export default function HistoryPage() {
   }, []);
 
   function toggleExpanded(id) {
+    const opening = !expandedIds.has(id);
     setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    if (opening) {
+      const recipe = recipes.find((r) => r.id === id);
+      if (recipe) {
+        voice?.setActiveRecipe({
+          mainIngredients: recipe.main_ingredients,
+          seasonings: recipe.seasonings,
+          steps: recipe.steps,
+        });
+      }
+    }
   }
 
   function toggleSelected(id) {
