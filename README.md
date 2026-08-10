@@ -2,7 +2,7 @@ https://fridge-recipe-omega.vercel.app
 
 # 🥬 냉장고 파먹기 — AI 레시피 추천
 
-> 상태 확인: [Next.js/Supabase 상태 보기](https://fridge-recipe-omega.vercel.app/api/health) (로그인 없이 누구나 확인 가능)
+> 상태 확인: [Next.js/Supabase 상태 보기](https://fridge-recipe-omega.vercel.app) (로그인 없이 누구나 확인 가능)
 
 ## 1. 이 서비스는 왜 만들었나요
 
