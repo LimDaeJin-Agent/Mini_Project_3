@@ -76,13 +76,36 @@ https://fridge-recipe-omega.vercel.app
 - 재료 기반 / 특정 요리 기반 AI 레시피 추천 (Gemini API)
 - 위치(GPS·직접 검색) + 실시간 날씨 연동 추천, 30분 내 재추천 시 중복 제외
 - 재료를 "1인분 vs 요청 인분"으로 환산, 손질법·초벌 여부·투입 순서 표준화
-- 가스레인지/인덕션별 조리 단계 타이머 (알림음 포함)
+- 가스레인지/인덕션별 조리 단계 타이머 (음성 안내 + 알림음)
+- **손 안 대고 쓰는 음성 비서** — 재료·레시피를 말로 물어보면 읽어주고, "그리고 뭐라고?" 하면 남은 재료만 알려줌 (자세한 내용은 5번 항목)
 - 레시피 저장 / 목록 조회 / 개별·다중 삭제 (Supabase)
 - 모든 검색 이력 자동 기록 (Supabase `search_history`)
 - Next.js·Supabase 상태를 누구나 확인할 수 있는 공개 링크 (`/api/health`)
 - 모바일 반응형 레이아웃, 롱프레스 다중 선택, 로딩 애니메이션, 입력창 잠금 등 사용성 보완
 
-## 5. 기술 스택
+## 5. 음성 비서 (핸즈프리 모드)
+
+요리할 때는 손에 재료나 물이 묻어 있어서 화면을 만지기 어렵습니다. 그래서 말을 걸면 알아듣고, 필요한 내용을 음성으로 읽어주는 기능을 넣었습니다. 레시피를 펼친 화면에서 마이크가 항상 켜져 있고, 버튼을 누르지 않아도 말이 끝나면 자동으로 인식합니다.
+
+**할 수 있는 말:**
+
+| 이렇게 말하면 | 이렇게 동작해요 |
+|---|---|
+| "재료를 불러줘" | 주재료·양념을 하나씩 읽어줘요 |
+| "레시피를 알려줘" | 조리 순서를 단계별로 읽어줘요 |
+| "그만", "멈춰" | 읽어주는 걸 멈춰요 |
+| "처음부터 다시 불러줘" | 처음부터 다시 읽어요 |
+| "이어서 불러줘" | 멈췄던 곳부터 계속 읽어요 |
+| "두부, 고추장, 그리고 뭐라고?" | 이미 말한 재료(두부, 고추장)는 빼고, **아직 안 넣은 재료만** 읽어줘요 |
+
+조리 단계 타이머를 시작하면 "N분간 가열을 시작합니다" → "1분/30초/10초 남았습니다" → "완료되었습니다"까지 자동으로 음성 안내가 나옵니다.
+
+- **음성 인식**(말의 의도 파악): `gemini-3.1-pro-preview` — 마이크로 녹음된 짧은 발화를 듣고 위 표의 명령 중 무엇인지, 어떤 재료를 언급했는지 판단합니다.
+- **음성 생성**(문장을 소리로): `gemini-2.5-pro-preview-tts` — 읽어줄 문장을 오디오로 변환합니다. 자주 나오는 고정 문구(1분/30초/10초 남았습니다 등)는 한 번 만들어서 재사용합니다.
+- 마이크 권한을 허용해야 동작하며, 처음 접속하면 브라우저가 권한을 한 번 물어봅니다.
+- **알아두시면 좋은 점**: 두 모델 모두 구글의 프리뷰(베타) 모델이라, 음성 생성이 간헐적으로 실패할 수 있습니다 (구글 서버 쪽 이슈로 확인됨, 저희 코드가 자동으로 몇 번 재시도합니다). 실패해도 화면이나 타이머는 정상 작동하고, 그 순간의 음성 안내만 조용히 생략됩니다.
+
+## 6. 기술 스택
 
 | 영역 | 사용 기술 |
 |---|---|
@@ -90,11 +113,13 @@ https://fridge-recipe-omega.vercel.app
 | 배포 | Vercel |
 | 데이터베이스 | Supabase (PostgreSQL) |
 | AI (레시피 추천) | Google Gemini API (`gemini-2.5-flash`) |
+| AI (음성 인식/의도 파악) | Google Gemini API (`gemini-3.1-pro-preview`) |
+| AI (음성 생성) | Google Gemini API (`gemini-2.5-pro-preview-tts`) |
 | 날씨 | OpenWeatherMap |
 | 위치/주소 변환 | OpenStreetMap Nominatim |
 | 스타일 | Tailwind CSS 4 |
 
-## 6. Supabase 테이블 구조
+## 7. Supabase 테이블 구조
 
 **recipes** — 저장한 레시피
 
@@ -132,7 +157,7 @@ https://fridge-recipe-omega.vercel.app
 | supabase_ok | boolean | |
 | supabase_error | text | 실패 시 에러 메시지 |
 
-## 7. 로그·데이터는 이 저장소(파일)에 있나요?
+## 8. 로그·데이터는 이 저장소(파일)에 있나요?
 
 **아니요. 이 Git 저장소에는 실제 로그나 데이터가 저장되지 않습니다.** 저장소에는 "코드"만 커밋되고, 로그와 실제 데이터는 각각 아래처럼 외부 서비스에 따로 쌓입니다.
 
@@ -144,7 +169,7 @@ https://fridge-recipe-omega.vercel.app
   - 저장소에는 "DB에 어떻게 연결하는지"(`lib/supabaseClient.js`)와 "테이블을 어떻게 만드는지"(이 문서 6번 항목의 SQL)만 코드/문서로 있을 뿐, 실제 값(행 데이터)은 전혀 커밋되지 않습니다.
   - 데이터를 직접 보려면 **Supabase 대시보드 → Table Editor → `recipes` / `search_history` / `status_checks`** 테이블을 클릭하면 됩니다.
 
-## 8. 로컬에서 실행하기
+## 9. 로컬에서 실행하기
 
 ```bash
 npm install
@@ -168,10 +193,11 @@ alter table recipes enable row level security;
 create policy "Public read/write for recipes" on recipes for all using (true) with check (true);
 ```
 
-## 9. 프로젝트 구조
+## 10. 프로젝트 구조
 
 ```
 app/
+  layout.js                    # 전체 레이아웃 (음성 비서 Provider 포함)
   page.js                     # 홈: 재료 입력 + 위치/날씨 + 추천 결과
   history/page.js              # 저장한 레시피 목록 (펼치기/삭제)
   api/recommend/route.js       # Gemini 호출 + 검색 이력 기록
@@ -180,13 +206,22 @@ app/
   api/weather/route.js         # 날씨 조회 (+ 위치명 역지오코딩)
   api/geocode/route.js         # 지역명으로 위치 검색
   api/health/route.js          # 서비스 상태 확인
+  api/tts/route.js             # 문장 → 음성(WAV) 변환
+  api/voice-command/route.js   # 음성 → 명령 의도 파악
 components/
   IngredientTable.js           # 주재료/양념 표
   PrepOrderTable.js             # 손질·투입 순서 표
-  StepTimer.js                  # 조리 단계 타이머
+  StepTimer.js                  # 조리 단계 타이머 (음성 안내 포함)
   FridgeLoader.js                # 냉장고 문 여는 로딩 애니메이션
   NotepadLoader.js                # 메모지 넘기는 로딩 애니메이션
+  Providers.js                    # 음성 비서 Context Provider 래퍼
+  VoiceAssistant.js               # 상시 듣기 + 음성 명령 처리 (화면에 안 보이는 백그라운드 컴포넌트)
+hooks/
+  useSequentialReader.js         # 문장을 순서대로 읽어주는 재생 큐
 lib/
   supabaseClient.js
+  VoiceContext.js                # "지금 펼쳐본 레시피" 공유 상태
+  ttsPlayer.js                    # 음성 재생/캐싱 유틸
+  wav.js                          # PCM → WAV 변환 유틸
   geo.js                        # 위치명 조합 유틸
 ```
