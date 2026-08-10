@@ -1,7 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import { pcmToWav } from "@/lib/wav";
 
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 4;
+const RETRY_DELAY_MS = 700;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function generateSpeech(ai, text, voice) {
   const response = await ai.models.generateContent({
@@ -49,6 +54,9 @@ export async function POST(request) {
     } catch (error) {
       lastError = error;
       console.error(`TTS attempt ${attempt} failed:`, error.message);
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(RETRY_DELAY_MS * attempt);
+      }
     }
   }
 
